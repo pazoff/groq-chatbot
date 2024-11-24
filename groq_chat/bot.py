@@ -33,7 +33,7 @@ load_dotenv()
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-# set higher logging level for httpx to avoid all GET and POST requests being logged
+# Set higher logging level for httpx to avoid excessive logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
@@ -65,12 +65,27 @@ def start_bot():
     # Build the app
     app = app_builder.build()
 
+    # Add command handlers
     app.add_handler(CommandHandler("start", start, filters=AuthFilter))
     app.add_handler(CommandHandler("help", help_command, filters=AuthFilter))
     app.add_handler(CommandHandler("new", new_command_handler, filters=AuthFilter))
     app.add_handler(CommandHandler("model", model_command_handler, filters=AuthFilter))
     app.add_handler(CommandHandler("info", info_command_handler, filters=AuthFilter))
 
+    # Add /audio command to toggle voice responses
+    async def audio_command(update: Update, context) -> None:
+        """Toggle voice response setting."""
+        current_setting = context.user_data.get("voice_enabled", True)
+        context.user_data["voice_enabled"] = not current_setting
+        status = "enabled" if context.user_data["voice_enabled"] else "disabled"
+        logger.info(
+            f"User {update.effective_user.id}: Voice responses toggled to {status}."
+        )
+        await update.message.reply_text(f"Voice responses are now {status}.")
+
+    app.add_handler(CommandHandler("audio", audio_command, filters=AuthFilter))
+
+    # Add system prompt conversation handler
     app.add_handler(
         ConversationHandler(
             entry_points=[
@@ -90,12 +105,16 @@ def start_bot():
         )
     )
 
+    # Add message handler for general messages
     app.add_handler(MessageHandler(MessageFilter, message_handler))
+
+    # Add callback query handler for model change
     app.add_handler(
         CallbackQueryHandler(change_model_callback_handler, pattern="^change_model_")
     )
 
+    # Add error handler
     app.add_error_handler(error_handler)
 
-    # Run the bot until the user presses Ctrl-C
+    # Run the bot
     app.run_polling(allowed_updates=Update.ALL_TYPES)
